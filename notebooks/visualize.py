@@ -86,6 +86,9 @@ def _(counts_df, mo):
 def _(alt, book_selector, compute_zipf_fit, counts_df, mo, pl):
     mo.stop(book_selector.value == "None", mo.md("No books available."))
 
+    # Ensure Altair allows rendering all word points without row limit errors
+    alt.data_transformers.disable_max_rows()
+
     book_counts = counts_df.filter(pl.col("book") == book_selector.value)
     total_words = int(book_counts["count"].sum())
     unique_words = len(book_counts)
@@ -156,6 +159,8 @@ def _(alt, book_selector, compute_zipf_fit, counts_df, mo, pl):
         .interactive()
     )
 
+    chart_view = mo.ui.altair_chart(zipf_chart)
+
     note = mo.md(
         r"""
         > **Note on Descriptive Zipf Fit**:
@@ -165,7 +170,7 @@ def _(alt, book_selector, compute_zipf_fit, counts_df, mo, pl):
         """
     )
 
-    mo.vstack([stats, zipf_chart, note])
+    mo.vstack([stats, chart_view, note])
     return
 
 
