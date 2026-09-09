@@ -8,6 +8,9 @@ dependencies = [
     "altair>=5.0.0",
     "marimo>=0.11.0",
     "polars>=1.0.0",
+    "pyarrow>=25.0.1",
+    "scipy>=1.18.1",
+    "vl-convert-python>=1.9.0.post1",
 ]
 
 [build-system]
