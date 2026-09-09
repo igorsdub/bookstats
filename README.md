@@ -29,7 +29,19 @@ The leading 5-digit number is the official Project Gutenberg ebook ID padded wit
 
 ## Setup Instructions
 
-*(To be added in Lesson 2)*
+This project requires Python 3.12 and [uv](https://github.com/astral-sh/uv).
+
+To reconstruct the virtual environment:
+
+```bash
+uv sync
+```
+
+To select the environment in VS Code:
+1. Open the Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Linux/WSL).
+2. Run **Python: Select Interpreter**.
+3. Choose the `.venv` interpreter (`.venv/bin/python`).
+
 
 ## Running the Analysis
 
