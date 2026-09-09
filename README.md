@@ -20,6 +20,7 @@ Raw book text files are stored using the pattern:
 The leading 5-digit number is the official Project Gutenberg ebook ID padded with zeros, followed by an underscore separator and a lowercase hyphenated short title.
 
 | 00345 | Dracula | Bram Stoker | https://www.gutenberg.org/ebooks/345 |
+| 01342 | Pride and Prejudice | Jane Austen | https://www.gutenberg.org/ebooks/1342 |
 
 ## Repository Structure
 
