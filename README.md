@@ -35,6 +35,7 @@ The leading 5-digit number is the official Project Gutenberg ebook ID padded wit
 │   └── visualize.py   # Interactive Marimo visualization
 ├── pyproject.toml     # Project metadata and dependencies
 ├── uv.lock            # Locked dependencies
+├── Makefile           # Automation DAG
 └── README.md          # Project overview
 ```
 
@@ -77,4 +78,25 @@ uv run marimo edit notebooks/visualize.py
 
 ## Reproducing Results
 
-*(To be added in Lesson 4)*
+This project uses Make to automate the data pipeline and test checks.
+
+Run linter and tests:
+
+```bash
+make check
+```
+
+Build all processed data, summary tables, and figures:
+
+```bash
+make all
+```
+
+Recreate all results from scratch:
+
+```bash
+make clean
+make check
+make all
+```
+
