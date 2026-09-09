@@ -159,8 +159,6 @@ def _(alt, book_selector, compute_zipf_fit, counts_df, mo, pl):
         .interactive()
     )
 
-    chart_view = mo.ui.altair_chart(zipf_chart)
-
     note = mo.md(
         r"""
         > **Note on Descriptive Zipf Fit**:
@@ -170,7 +168,7 @@ def _(alt, book_selector, compute_zipf_fit, counts_df, mo, pl):
         """
     )
 
-    mo.vstack([stats, chart_view, note])
+    mo.vstack([stats, zipf_chart, note])
     return
 
 
