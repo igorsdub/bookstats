@@ -6,21 +6,23 @@ app = marimo.App(width="medium")
 
 @app.cell
 def __():
-    import marimo as mo
-    import altair as alt
-    import polars as pl
     from pathlib import Path
+    import altair as alt
+    import marimo as mo
+    import polars as pl
+    from bookstats.zipf import compute_zipf_fit
 
-    return mo, alt, pl, Path
+    return Path, alt, compute_zipf_fit, mo, pl
 
 
 @app.cell
 def __(mo):
     mo.md(
         r"""
-        # Book Word Frequency Analysis
+        # Book Word Frequency & Zipf's Law Analysis
 
-        An interactive visualization of word frequency distributions across Project Gutenberg books.
+        An interactive analysis of word frequency distributions and descriptive
+        Zipf fits across Project Gutenberg books.
         """
     )
     return
@@ -65,32 +67,76 @@ def __(counts_df, mo):
 
 
 @app.cell
-def __(alt, book_selector, counts_df, mo, pl):
+def __(alt, book_selector, compute_zipf_fit, counts_df, mo, pl):
     mo.stop(book_selector.value == "None", mo.md("No books available."))
 
-    selected_df = (
-        counts_df.filter(pl.col("book") == book_selector.value)
-        .sort("count", descending=True)
-        .head(30)
+    book_counts = counts_df.filter(pl.col("book") == book_selector.value)
+    total_words = int(book_counts["count"].sum())
+    unique_words = len(book_counts)
+
+    # Compute descriptive Zipf fit using bookstats.zipf
+    fit_result = compute_zipf_fit(book_counts)
+
+    stats = mo.hstack(
+        [
+            mo.stat(label="Total Words", value=f"{total_words:,}"),
+            mo.stat(label="Unique Vocabulary", value=f"{unique_words:,}"),
+            mo.stat(label="Fit Slope", value=f"{fit_result.slope:.3f}"),
+            mo.stat(
+                label="R² (Coeff of Determination)", value=f"{fit_result.r_squared:.3f}"
+            ),
+        ]
     )
 
-    chart = (
-        alt.Chart(selected_df)
-        .mark_bar()
+    # Zipf plot: Log(Rank) vs Log(Frequency)
+    plot_data = fit_result.data
+    points = (
+        alt.Chart(plot_data)
+        .mark_circle(size=20, opacity=0.5, color="#1f77b4")
         .encode(
-            x=alt.X("count:Q", title="Frequency Count"),
-            y=alt.Y("word:N", sort="-x", title="Word"),
-            tooltip=["word", "count"],
-        )
-        .properties(
-            title=f"Top 30 Most Frequent Words: {book_selector.value}",
-            width=600,
-            height=500,
+            x=alt.X("log_rank:Q", title="Log(Rank)"),
+            y=alt.Y("log_count:Q", title="Log(Frequency)"),
+            tooltip=["word", "rank", "count"],
         )
     )
 
-    mo.ui.altair_chart(chart)
-    return chart, selected_df
+    line = (
+        alt.Chart(plot_data)
+        .mark_line(color="#d62728", strokeDash=[5, 5])
+        .encode(
+            x=alt.X("log_rank:Q"),
+            y=alt.Y("fitted_log_count:Q"),
+        )
+    )
+
+    zipf_chart = (points + line).properties(
+        title=f"Descriptive Zipf Fit: {book_selector.value} (Slope: {fit_result.slope:.2f}, R²: {fit_result.r_squared:.2f})",
+        width=600,
+        height=400,
+    )
+
+    note = mo.md(
+        r"""
+        > **Note on Descriptive Zipf Fit**:
+        > This is an ordinary least squares (OLS) linear fit on log-transformed rank and frequency.
+        > While widely used as a descriptive summary, OLS on log-transformed data can yield biased estimates
+        > and does not prove that word frequencies strictly follow a power law.
+        """
+    )
+
+    mo.vstack([stats, zipf_chart, note])
+    return (
+        book_counts,
+        fit_result,
+        line,
+        note,
+        plot_data,
+        points,
+        stats,
+        total_words,
+        unique_words,
+        zipf_chart,
+    )
 
 
 if __name__ == "__main__":
