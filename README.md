@@ -19,10 +19,13 @@ Raw book text files are stored using the pattern:
 
 The leading 5-digit number is the official Project Gutenberg ebook ID padded with zeros, followed by an underscore separator and a lowercase hyphenated short title.
 
+| 00345 | Dracula | Bram Stoker | https://www.gutenberg.org/ebooks/345 |
+
 ## Repository Contents
 
 - `README.md`: Project description and book inventory.
 - `00084_frankenstein.txt`: Raw text of *Frankenstein*.
+- `00345_dracula.txt`: Raw text of *Dracula*.
 
 ## Setup Instructions
 
