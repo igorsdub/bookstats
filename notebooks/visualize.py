@@ -105,10 +105,32 @@ def _(alt, book_selector, compute_zipf_fit, counts_df, mo, pl):
         ]
     )
 
-    # Zipf plot: Log(Rank) vs Log(Frequency)
-    plot_data = fit_result.data
+    # Prepare compact plot data: select only needed fields and round floats
+    points_data = fit_result.data.select(
+        [
+            "word",
+            "rank",
+            "count",
+            pl.col("log_rank").round(3),
+            pl.col("log_count").round(3),
+        ]
+    )
+
+    # For the linear fit line, only 2 endpoints are needed instead of thousands of duplicate rows
+    min_log_rank = float(fit_result.data["log_rank"].min())
+    max_log_rank = float(fit_result.data["log_rank"].max())
+    line_data = pl.DataFrame(
+        {
+            "log_rank": [min_log_rank, max_log_rank],
+            "fitted_log_count": [
+                round(fit_result.slope * min_log_rank + fit_result.intercept, 3),
+                round(fit_result.slope * max_log_rank + fit_result.intercept, 3),
+            ],
+        }
+    )
+
     points = (
-        alt.Chart(plot_data)
+        alt.Chart(points_data)
         .mark_circle(size=25, opacity=0.5, color="#1f77b4")
         .encode(
             x=alt.X(
@@ -134,7 +156,7 @@ def _(alt, book_selector, compute_zipf_fit, counts_df, mo, pl):
     )
 
     line = (
-        alt.Chart(plot_data)
+        alt.Chart(line_data)
         .mark_line(color="#d62728", strokeDash=[5, 5], strokeWidth=2)
         .encode(
             x=alt.X("log_rank:Q"),
