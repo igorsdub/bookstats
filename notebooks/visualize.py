@@ -52,7 +52,9 @@ def __(Path, pl):
 
 @app.cell
 def __(counts_df, mo):
-    books = sorted(counts_df["book"].unique().to_list()) if len(counts_df) > 0 else ["None"]
+    books = (
+        sorted(counts_df["book"].unique().to_list()) if len(counts_df) > 0 else ["None"]
+    )
     book_selector = mo.ui.dropdown(
         options=books,
         value=books[0] if books else "None",
