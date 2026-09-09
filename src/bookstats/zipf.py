@@ -12,6 +12,8 @@ import numpy as np
 import polars as pl
 from scipy.stats import linregress
 
+alt.data_transformers.disable_max_rows()
+
 
 @dataclass(frozen=True)
 class ZipfFitResult:
@@ -198,10 +200,18 @@ def generate_zipf_chart(processed_counts_path: Path | str) -> alt.TopLevelMixin:
     # Observed points
     points = (
         alt.Chart(all_data)
-        .mark_circle(size=15, opacity=0.4)
+        .mark_circle(size=20, opacity=0.4)
         .encode(
-            x=alt.X("log_rank:Q", title="Log(Rank)"),
-            y=alt.Y("log_count:Q", title="Log(Word Count)"),
+            x=alt.X(
+                "log_rank:Q",
+                title="Log(Rank)",
+                axis=alt.Axis(titleFontSize=14, labelFontSize=12, titlePadding=10),
+            ),
+            y=alt.Y(
+                "log_count:Q",
+                title="Log(Word Count)",
+                axis=alt.Axis(titleFontSize=14, labelFontSize=12, titlePadding=10),
+            ),
             color=alt.Color("book:N", title="Book"),
             tooltip=["book", "word", "rank", "count"],
         )
@@ -210,7 +220,7 @@ def generate_zipf_chart(processed_counts_path: Path | str) -> alt.TopLevelMixin:
     # Fitted lines
     lines = (
         alt.Chart(all_data)
-        .mark_line(strokeDash=[4, 4])
+        .mark_line(strokeDash=[4, 4], strokeWidth=2)
         .encode(
             x=alt.X("log_rank:Q"),
             y=alt.Y("fitted_log_count:Q"),
@@ -221,9 +231,12 @@ def generate_zipf_chart(processed_counts_path: Path | str) -> alt.TopLevelMixin:
     chart = (
         (points + lines)
         .properties(
-            title="Descriptive Zipf's Law Fit (Log Rank vs Log Frequency)",
-            width=650,
-            height=450,
+            title=alt.Title(
+                "Descriptive Zipf's Law Fit (Log Rank vs Log Frequency)",
+                fontSize=16,
+            ),
+            width=600,
+            height=420,
         )
         .interactive()
     )
