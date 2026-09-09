@@ -21,12 +21,17 @@ The leading 5-digit number is the official Project Gutenberg ebook ID padded wit
 
 | 00345 | Dracula | Bram Stoker | https://www.gutenberg.org/ebooks/345 |
 
-## Repository Contents
+## Repository Structure
 
-- `README.md`: Project description and book inventory.
-- `00084_frankenstein.txt`: Raw text of *Frankenstein*.
-- `00345_dracula.txt`: Raw text of *Dracula*.
-- `count_words.py`: Word frequency counting script.
+```text
+├── data/
+│   ├── raw/           # Original Project Gutenberg text files
+│   └── intermediate/  # Generated per-book count tables (uncommitted)
+├── scripts/           # Executable analysis scripts
+├── pyproject.toml     # Project metadata and dependencies
+├── uv.lock            # Locked dependencies
+└── README.md          # Project overview
+```
 
 ## Setup Instructions
 
@@ -49,7 +54,7 @@ To select the environment in VS Code:
 Count words in a book:
 
 ```bash
-uv run python count_words.py 00084_frankenstein.txt 00084_frankenstein.csv
+uv run python scripts/count_words.py data/raw/00084_frankenstein.txt data/intermediate/00084_frankenstein.csv
 ```
 
 
