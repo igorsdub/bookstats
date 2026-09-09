@@ -72,15 +72,11 @@ def count_words(words: list[str]) -> pl.DataFrame:
         )
     df = pl.DataFrame({"word": words})
     return (
-        df.group_by("word")
-        .agg(pl.len().alias("count"))
-        .sort("count", descending=True)
+        df.group_by("word").agg(pl.len().alias("count")).sort("count", descending=True)
     )
 
 
-def process_book_file(
-    input_path: Path | str, output_path: Path | str
-) -> pl.DataFrame:
+def process_book_file(input_path: Path | str, output_path: Path | str) -> pl.DataFrame:
     """Process a single book text file and save word counts to CSV.
 
     Parameters
