@@ -4,4 +4,6 @@ version = "0.1.0"
 description = "A cumulative research project analyzing Project Gutenberg word distributions"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "polars>=1.44.1",
+]
