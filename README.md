@@ -27,7 +27,12 @@ The leading 5-digit number is the official Project Gutenberg ebook ID padded wit
 ├── data/
 │   ├── raw/           # Original Project Gutenberg text files
 │   └── intermediate/  # Generated per-book count tables (uncommitted)
-├── scripts/           # Executable analysis scripts
+├── src/
+│   └── bookstats/     # Reusable analysis package
+│       ├── __init__.py
+│       └── counts.py
+├── notebooks/
+│   └── visualize.py   # Interactive Marimo visualization
 ├── pyproject.toml     # Project metadata and dependencies
 ├── uv.lock            # Locked dependencies
 └── README.md          # Project overview
@@ -51,10 +56,22 @@ To select the environment in VS Code:
 
 ## Running the Analysis
 
-Count words in a book:
+Process a raw book using the `bookstats` package:
 
 ```bash
-uv run python scripts/count_words.py data/raw/00084_frankenstein.txt data/intermediate/00084_frankenstein.csv
+uv run python -m bookstats.counts data/raw/00084_frankenstein.txt data/intermediate/00084_frankenstein.csv
+```
+
+Combine all processed books:
+
+```bash
+uv run python -m bookstats.counts --combine data/intermediate/*.csv -o data/processed/book-counts.csv
+```
+
+Open the interactive Marimo visualization:
+
+```bash
+uv run marimo edit notebooks/visualize.py
 ```
 
 
