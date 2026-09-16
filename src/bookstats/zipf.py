@@ -27,18 +27,33 @@ class ZipfFitResult:
         Intercept of the descriptive log-log linear fit.
     r_squared : float
         Coefficient of determination (R^2).
+    total_words : int
+        Total word count across all occurrences.
+    unique_words : int
+        Number of unique vocabulary words.
     data : polars.DataFrame
         DataFrame with columns: rank, count, log_rank, log_count,
         fitted_log_count, fitted_count.
+    line_data : polars.DataFrame
+        DataFrame with exactly 2 rows (minimum and maximum log_rank)
+        and fitted_log_count for fast line rendering.
+    book : str or None
+        Identifier for the book, if specified.
     """
 
     slope: float
     intercept: float
     r_squared: float
+    total_words: int
+    unique_words: int
     data: pl.DataFrame
+    line_data: pl.DataFrame
+    book: str | None = None
 
 
-def compute_zipf_fit(counts_df: pl.DataFrame) -> ZipfFitResult:
+def compute_zipf_fit(
+    counts_df: pl.DataFrame, book_name: str | None = None
+) -> ZipfFitResult:
     """Compute ranks, log transforms, and descriptive log-log linear fit.
 
     This performs an ordinary least squares (OLS) linear fit on
@@ -52,11 +67,13 @@ def compute_zipf_fit(counts_df: pl.DataFrame) -> ZipfFitResult:
     ----------
     counts_df : polars.DataFrame
         DataFrame containing at least 'count' (and optionally 'word').
+    book_name : str, optional
+        Name or identifier of the book.
 
     Returns
     -------
     ZipfFitResult
-        Fit metrics (slope, intercept, r_squared) and transformed DataFrame.
+        Fit metrics (slope, intercept, r_squared, counts) and transformed DataFrames.
     """
     if len(counts_df) == 0:
         empty_df = pl.DataFrame(
@@ -77,12 +94,28 @@ def compute_zipf_fit(counts_df: pl.DataFrame) -> ZipfFitResult:
                 "fitted_count": pl.Float64,
             },
         )
-        return ZipfFitResult(slope=0.0, intercept=0.0, r_squared=0.0, data=empty_df)
+        empty_line_df = pl.DataFrame(
+            {"log_rank": [], "fitted_log_count": []},
+            schema={"log_rank": pl.Float64, "fitted_log_count": pl.Float64},
+        )
+        return ZipfFitResult(
+            slope=0.0,
+            intercept=0.0,
+            r_squared=0.0,
+            total_words=0,
+            unique_words=0,
+            data=empty_df,
+            line_data=empty_line_df,
+            book=book_name,
+        )
 
     # Sort by count descending and assign rank starting at 1
     sorted_df = counts_df.sort("count", descending=True)
     ranks = np.arange(1, len(sorted_df) + 1, dtype=np.float64)
     counts = sorted_df["count"].to_numpy().astype(np.float64)
+
+    total_words = int(sorted_df["count"].sum())
+    unique_words = len(sorted_df)
 
     log_ranks = np.log(ranks)
     log_counts = np.log(counts)
@@ -110,11 +143,29 @@ def compute_zipf_fit(counts_df: pl.DataFrame) -> ZipfFitResult:
         ]
     )
 
+    min_log_rank = float(log_ranks[0])
+    max_log_rank = float(log_ranks[-1])
+    line_data = pl.DataFrame(
+        {
+            "log_rank": [min_log_rank, max_log_rank],
+            "fitted_log_count": [
+                float(slope * min_log_rank + intercept),
+                float(slope * max_log_rank + intercept),
+            ],
+        }
+    )
+    if book_name is not None:
+        line_data = line_data.with_columns(pl.lit(book_name).alias("book"))
+
     return ZipfFitResult(
         slope=slope,
         intercept=intercept,
         r_squared=r_squared,
+        total_words=total_words,
+        unique_words=unique_words,
         data=result_df,
+        line_data=line_data,
+        book=book_name,
     )
 
 
@@ -144,17 +195,15 @@ def fit_all_books(
 
     for book_id in sorted(df["book"].unique().to_list()):
         book_df = df.filter(pl.col("book") == book_id)
-        total_words = int(book_df["count"].sum())
-        unique_words = len(book_df)
-        fit = compute_zipf_fit(book_df)
+        fit = compute_zipf_fit(book_df, book_name=book_id)
         records.append(
             {
                 "book": book_id,
                 "slope": fit.slope,
                 "intercept": fit.intercept,
                 "r_squared": fit.r_squared,
-                "total_words": total_words,
-                "unique_words": unique_words,
+                "total_words": fit.total_words,
+                "unique_words": fit.unique_words,
             }
         )
 
@@ -164,83 +213,205 @@ def fit_all_books(
     return summary_df
 
 
-def generate_zipf_chart(processed_counts_path: Path | str) -> alt.TopLevelMixin:
+def generate_zipf_chart(
+    data: Path | str | pl.DataFrame | ZipfFitResult,
+    title: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
+) -> alt.TopLevelMixin:
     """Generate an Altair log-log rank-frequency chart with linear fits.
+
+    Supports both single-book fits and multi-book comparisons. Uses 2-point
+    regression endpoints to optimize chart size and rendering performance.
 
     Parameters
     ----------
-    processed_counts_path : Path or str
-        Path to processed combined book counts CSV.
+    data : Path, str, polars.DataFrame, or ZipfFitResult
+        Input data: a single ZipfFitResult, a processed counts DataFrame,
+        or a Path/str to processed combined book counts CSV.
+    title : str, optional
+        Custom title for the chart. Defaults to standard titles.
+    width : int, optional
+        Width of chart in pixels (default: 550 for single book, 600 for multi-book).
+    height : int, optional
+        Height of chart in pixels (default: 380 for single book, 420 for multi-book).
 
     Returns
     -------
     altair.TopLevelMixin
         Altair chart combining observed word points and fitted lines.
     """
-    df = pl.read_csv(processed_counts_path)
-    book_frames = []
+    if isinstance(data, ZipfFitResult):
+        fit = data
+        if len(fit.data) == 0:
+            return alt.Chart().mark_text().encode(text=alt.value("No data"))
 
-    for book_id in sorted(df["book"].unique().to_list()):
-        book_df = df.filter(pl.col("book") == book_id)
-        fit = compute_zipf_fit(book_df)
-        fit_df = fit.data.with_columns(
+        # Compact plot data: round floats to reduce payload
+        points_data = fit.data.select(
             [
-                pl.lit(book_id).alias("book"),
-                pl.lit(fit.slope).alias("slope"),
-                pl.lit(fit.r_squared).alias("r_squared"),
+                pl.col("log_rank").round(3),
+                pl.col("log_count").round(3),
+            ]
+            + [c for c in ["word", "rank", "count"] if c in fit.data.columns]
+        )
+        line_data = fit.line_data.select(
+            [
+                pl.col("log_rank").round(3),
+                pl.col("fitted_log_count").round(3),
             ]
         )
-        book_frames.append(fit_df)
 
-    if not book_frames:
+        tooltip_cols = [
+            c for c in ["word", "rank", "count"] if c in points_data.columns
+        ]
+
+        points = (
+            alt.Chart(points_data)
+            .mark_circle(size=25, opacity=0.5, color="#1f77b4")
+            .encode(
+                x=alt.X(
+                    "log_rank:Q",
+                    title="Log(Rank)",
+                    axis=alt.Axis(
+                        titleFontSize=14,
+                        labelFontSize=12,
+                        titlePadding=10,
+                    ),
+                ),
+                y=alt.Y(
+                    "log_count:Q",
+                    title="Log(Frequency)",
+                    axis=alt.Axis(
+                        titleFontSize=14,
+                        labelFontSize=12,
+                        titlePadding=10,
+                    ),
+                ),
+                tooltip=tooltip_cols,
+            )
+        )
+
+        line = (
+            alt.Chart(line_data)
+            .mark_line(color="#d62728", strokeDash=[5, 5], strokeWidth=2)
+            .encode(
+                x=alt.X("log_rank:Q"),
+                y=alt.Y("fitted_log_count:Q"),
+            )
+        )
+
+        chart_title = title or (
+            f"Descriptive Zipf Fit: {fit.book}" if fit.book else "Descriptive Zipf Fit"
+        )
+        subtitle = (
+            f"Slope: {fit.slope:.3f} | Intercept: {fit.intercept:.3f} | "
+            f"R²: {fit.r_squared:.3f}"
+        )
+
+        return (
+            (points + line)
+            .properties(
+                title=alt.Title(
+                    chart_title,
+                    subtitle=subtitle,
+                    fontSize=16,
+                    subtitleFontSize=13,
+                ),
+                width=width or 550,
+                height=height or 380,
+            )
+            .interactive()
+        )
+
+    # Multi-book or DataFrame / file path
+    if isinstance(data, (str, Path)):
+        df = pl.read_csv(data)
+    else:
+        df = data
+
+    if len(df) == 0:
         return alt.Chart().mark_text().encode(text=alt.value("No data"))
 
-    all_data = pl.concat(book_frames)
+    if "book" in df.columns:
+        books = sorted(df["book"].unique().to_list())
+        points_frames = []
+        line_frames = []
 
-    # Observed points
-    points = (
-        alt.Chart(all_data)
-        .mark_circle(size=20, opacity=0.4)
-        .encode(
-            x=alt.X(
-                "log_rank:Q",
-                title="Log(Rank)",
-                axis=alt.Axis(titleFontSize=14, labelFontSize=12, titlePadding=10),
-            ),
-            y=alt.Y(
-                "log_count:Q",
-                title="Log(Word Count)",
-                axis=alt.Axis(titleFontSize=14, labelFontSize=12, titlePadding=10),
-            ),
-            color=alt.Color("book:N", title="Book"),
-            tooltip=["book", "word", "rank", "count"],
-        )
-    )
+        for book_id in books:
+            book_df = df.filter(pl.col("book") == book_id)
+            fit = compute_zipf_fit(book_df, book_name=book_id)
+            if len(fit.data) > 0:
+                p_df = fit.data.select(
+                    [
+                        pl.lit(book_id).alias("book"),
+                        pl.col("log_rank").round(3),
+                        pl.col("log_count").round(3),
+                    ]
+                    + [c for c in ["word", "rank", "count"] if c in fit.data.columns]
+                )
+                l_df = fit.line_data.select(
+                    [
+                        pl.lit(book_id).alias("book"),
+                        pl.col("log_rank").round(3),
+                        pl.col("fitted_log_count").round(3),
+                    ]
+                )
+                points_frames.append(p_df)
+                line_frames.append(l_df)
 
-    # Fitted lines
-    lines = (
-        alt.Chart(all_data)
-        .mark_line(strokeDash=[4, 4], strokeWidth=2)
-        .encode(
-            x=alt.X("log_rank:Q"),
-            y=alt.Y("fitted_log_count:Q"),
-            color=alt.Color("book:N"),
-        )
-    )
+        if not points_frames:
+            return alt.Chart().mark_text().encode(text=alt.value("No data"))
 
-    chart = (
-        (points + lines)
-        .properties(
-            title=alt.Title(
-                "Descriptive Zipf's Law Fit (Log Rank vs Log Frequency)",
-                fontSize=16,
-            ),
-            width=600,
-            height=420,
+        all_points = pl.concat(points_frames)
+        all_lines = pl.concat(line_frames)
+
+        tooltip_cols = [
+            c for c in ["book", "word", "rank", "count"] if c in all_points.columns
+        ]
+
+        points = (
+            alt.Chart(all_points)
+            .mark_circle(size=20, opacity=0.4)
+            .encode(
+                x=alt.X(
+                    "log_rank:Q",
+                    title="Log(Rank)",
+                    axis=alt.Axis(titleFontSize=14, labelFontSize=12, titlePadding=10),
+                ),
+                y=alt.Y(
+                    "log_count:Q",
+                    title="Log(Word Count)",
+                    axis=alt.Axis(titleFontSize=14, labelFontSize=12, titlePadding=10),
+                ),
+                color=alt.Color("book:N", title="Book"),
+                tooltip=tooltip_cols,
+            )
         )
-        .interactive()
-    )
-    return chart
+
+        lines = (
+            alt.Chart(all_lines)
+            .mark_line(strokeDash=[4, 4], strokeWidth=2)
+            .encode(
+                x=alt.X("log_rank:Q"),
+                y=alt.Y("fitted_log_count:Q"),
+                color=alt.Color("book:N"),
+            )
+        )
+
+        chart_title = title or "Descriptive Zipf's Law Fit (Log Rank vs Log Frequency)"
+        return (
+            (points + lines)
+            .properties(
+                title=alt.Title(chart_title, fontSize=16),
+                width=width or 600,
+                height=height or 420,
+            )
+            .interactive()
+        )
+
+    # DataFrame without 'book' column: compute as single book fit
+    single_fit = compute_zipf_fit(df)
+    return generate_zipf_chart(single_fit, title=title, width=width, height=height)
 
 
 def plot_zipf(
