@@ -5,7 +5,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from bookstats.zipf import compute_zipf_fit, fit_all_books
+from bookstats.zipf import compute_zipf_fit, fit_all_books, generate_zipf_chart
 
 
 def test_compute_zipf_fit_linear_decay():
@@ -59,3 +59,48 @@ def test_fit_all_books(tmp_path: Path):
     assert "total_words" in summary.columns
     assert "unique_words" in summary.columns
     assert summary["book"].to_list() == ["book1", "book2"]
+
+
+def test_compute_zipf_fit_summary_metrics_and_line_data():
+    df = pl.DataFrame(
+        {
+            "word": ["the", "of", "and", "to", "a"],
+            "count": [100, 50, 25, 10, 5],
+        }
+    )
+    fit = compute_zipf_fit(df, book_name="test_book")
+    assert fit.total_words == 190
+    assert fit.unique_words == 5
+    assert fit.book == "test_book"
+    assert len(fit.line_data) == 2
+    assert "log_rank" in fit.line_data.columns
+    assert "fitted_log_count" in fit.line_data.columns
+
+
+def test_generate_zipf_chart_single_fit():
+    df = pl.DataFrame(
+        {
+            "word": ["the", "of", "and"],
+            "count": [30, 20, 10],
+        }
+    )
+    fit = compute_zipf_fit(df, book_name="sample")
+    chart = generate_zipf_chart(fit)
+    assert chart is not None
+    # Altair chart has to_dict representation
+    spec = chart.to_dict()
+    assert "layer" in spec or "mark" in spec
+
+
+def test_generate_zipf_chart_multi_book():
+    sample_data = pl.DataFrame(
+        {
+            "book": ["book1", "book1", "book2", "book2"],
+            "word": ["the", "and", "the", "in"],
+            "count": [100, 50, 80, 40],
+        }
+    )
+    chart = generate_zipf_chart(sample_data)
+    assert chart is not None
+    spec = chart.to_dict()
+    assert "layer" in spec or "mark" in spec

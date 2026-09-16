@@ -7,14 +7,11 @@ app = marimo.App(width="medium")
 @app.cell
 def _():
     from pathlib import Path
-    import altair as alt
     import marimo as mo
     import polars as pl
-    from bookstats.zipf import compute_zipf_fit
+    from bookstats.zipf import compute_zipf_fit, generate_zipf_chart
 
-    alt.data_transformers.disable_max_rows()
-
-    return Path, alt, compute_zipf_fit, mo, pl
+    return Path, compute_zipf_fit, generate_zipf_chart, mo, pl
 
 
 @app.cell
@@ -45,26 +42,18 @@ def _(mo):
 
 
 @app.cell
-def _(Path, pl):
+def _(Path, mo, pl):
     # Load processed book counts
     processed_path = Path("data/processed/book-counts.csv")
-    if processed_path.exists():
-        counts_df = pl.read_csv(processed_path)
-    else:
-        # Fallback to intermediate counts if processed is not yet generated
-        intermediate_dir = Path("data/intermediate")
-        csv_files = list(intermediate_dir.glob("*.csv"))
-        if csv_files:
-            frames = []
-            for p in csv_files:
-                d = pl.read_csv(p).with_columns(pl.lit(p.stem).alias("book"))
-                frames.append(d.select(["book", "word", "count"]))
-            counts_df = pl.concat(frames)
-        else:
-            counts_df = pl.DataFrame(
-                {"book": [], "word": [], "count": []},
-                schema={"book": pl.String, "word": pl.String, "count": pl.UInt32},
-            )
+    mo.stop(
+        not processed_path.exists(),
+        mo.md(
+            "⚠️ **Processed data not found.** "
+            "Please run `make all` (or `uv run python -m bookstats.counts --combine ...`) "
+            "to generate `data/processed/book-counts.csv`."
+        ),
+    )
+    counts_df = pl.read_csv(processed_path)
     return (counts_df,)
 
 
@@ -83,103 +72,24 @@ def _(counts_df, mo):
 
 
 @app.cell
-def _(alt, book_selector, compute_zipf_fit, counts_df, mo, pl):
+def _(book_selector, compute_zipf_fit, counts_df, generate_zipf_chart, mo, pl):
     mo.stop(book_selector.value == "None", mo.md("No books available."))
 
-    # Ensure Altair allows rendering all word points without row limit errors
-    alt.data_transformers.disable_max_rows()
-
     book_counts = counts_df.filter(pl.col("book") == book_selector.value)
-    total_words = int(book_counts["count"].sum())
-    unique_words = len(book_counts)
 
-    # Compute descriptive Zipf fit using bookstats.zipf
-    fit_result = compute_zipf_fit(book_counts)
+    # Compute descriptive Zipf fit using deepened bookstats.zipf
+    fit_result = compute_zipf_fit(book_counts, book_name=book_selector.value)
 
     stats = mo.hstack(
         [
-            mo.stat(label="Total Words", value=f"{total_words:,}"),
-            mo.stat(label="Unique Vocabulary", value=f"{unique_words:,}"),
+            mo.stat(label="Total Words", value=f"{fit_result.total_words:,}"),
+            mo.stat(label="Unique Vocabulary", value=f"{fit_result.unique_words:,}"),
             mo.stat(label="Fit Slope (β₁)", value=f"{fit_result.slope:.3f}"),
             mo.stat(label="R² (Determination)", value=f"{fit_result.r_squared:.3f}"),
         ]
     )
 
-    # Prepare compact plot data: select only needed fields and round floats
-    points_data = fit_result.data.select(
-        [
-            "word",
-            "rank",
-            "count",
-            pl.col("log_rank").round(3),
-            pl.col("log_count").round(3),
-        ]
-    )
-
-    # For the linear fit line, only 2 endpoints are needed instead of thousands of duplicate rows
-    min_log_rank = float(fit_result.data["log_rank"].min())
-    max_log_rank = float(fit_result.data["log_rank"].max())
-    line_data = pl.DataFrame(
-        {
-            "log_rank": [min_log_rank, max_log_rank],
-            "fitted_log_count": [
-                round(fit_result.slope * min_log_rank + fit_result.intercept, 3),
-                round(fit_result.slope * max_log_rank + fit_result.intercept, 3),
-            ],
-        }
-    )
-
-    points = (
-        alt.Chart(points_data)
-        .mark_circle(size=25, opacity=0.5, color="#1f77b4")
-        .encode(
-            x=alt.X(
-                "log_rank:Q",
-                title="Log(Rank)",
-                axis=alt.Axis(
-                    titleFontSize=14,
-                    labelFontSize=12,
-                    titlePadding=10,
-                ),
-            ),
-            y=alt.Y(
-                "log_count:Q",
-                title="Log(Frequency)",
-                axis=alt.Axis(
-                    titleFontSize=14,
-                    labelFontSize=12,
-                    titlePadding=10,
-                ),
-            ),
-            tooltip=["word", "rank", "count"],
-        )
-    )
-
-    line = (
-        alt.Chart(line_data)
-        .mark_line(color="#d62728", strokeDash=[5, 5], strokeWidth=2)
-        .encode(
-            x=alt.X("log_rank:Q"),
-            y=alt.Y("fitted_log_count:Q"),
-        )
-    )
-
-    zipf_chart = (
-        (points + line)
-        .properties(
-            title=alt.Title(
-                f"Descriptive Zipf Fit: {book_selector.value}",
-                subtitle=(
-                    f"Slope: {fit_result.slope:.3f} | Intercept: {fit_result.intercept:.3f} | R²: {fit_result.r_squared:.3f}"
-                ),
-                fontSize=16,
-                subtitleFontSize=13,
-            ),
-            width=550,
-            height=380,
-        )
-        .interactive()
-    )
+    zipf_chart = generate_zipf_chart(fit_result)
 
     note = mo.md(
         r"""
